@@ -10,15 +10,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # -----------------------------------
+      # --------------------------------------------------
       # 1. Checkout Code
-      # -----------------------------------
+      # --------------------------------------------------
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # -----------------------------------
+      # --------------------------------------------------
       # 2. Configure AWS Credentials
-      # -----------------------------------
+      # --------------------------------------------------
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -26,59 +26,63 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # -----------------------------------
+      # --------------------------------------------------
       # 3. Login to ECR
-      # -----------------------------------
+      # --------------------------------------------------
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # -----------------------------------
+      # --------------------------------------------------
       # 4. Create Image Tag (Commit SHA)
-      # -----------------------------------
+      # --------------------------------------------------
       - name: Set image tag
         run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      # -----------------------------------
+      # --------------------------------------------------
       # 5. Build Docker Image
-      # -----------------------------------
+      # --------------------------------------------------
       - name: Build Docker image
         run: |
           docker build -t ${{ secrets.ECR_REPOSITORY }} .
 
-      # -----------------------------------
+      # --------------------------------------------------
       # 6. Tag Image Properly
-      # -----------------------------------
+      # --------------------------------------------------
       - name: Tag Docker image
         run: |
           docker tag ${{ secrets.ECR_REPOSITORY }}:latest \
           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:$IMAGE_TAG
 
-      # -----------------------------------
-      # 7. Push Image To ECR
-      # -----------------------------------
-      - name: Push Docker image to ECR
+      # --------------------------------------------------
+      # 7. Push Image to ECR
+      # --------------------------------------------------
+      - name: Push Docker image
         run: |
           docker push \
           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:$IMAGE_TAG
 
-      # -----------------------------------
-      # 8. Deploy to EC2
-      # -----------------------------------
+      # --------------------------------------------------
+      # 8. Deploy to EC2 (FIXED VARIABLE EXPORT)
+      # --------------------------------------------------
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: IMAGE_TAG,AWS_ACCOUNT_ID,AWS_REGION,ECR_REPOSITORY
+          envs: IMAGE_TAG
           script: |
+            export AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
+            export AWS_REGION=${{ secrets.AWS_REGION }}
+            export ECR_REPOSITORY=${{ secrets.ECR_REPOSITORY }}
+
             IMAGE=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
 
             # Login to ECR from EC2
             aws ecr get-login-password --region ${AWS_REGION} | \
             docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
-            # Pull New Image
+            # Pull Latest Image
             docker pull $IMAGE || exit 1
 
             # Stop & Remove Old Container
