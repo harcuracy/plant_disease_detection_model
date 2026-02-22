@@ -16,6 +16,3 @@ pytest_cache/
 
 *.log
 
-Dockerfile
-docker-compose.yml
-.github
