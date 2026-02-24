@@ -25,23 +25,25 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions
 
       - name: Login to Amazon ECR
-        id: login-ecr
+        id: ecr_login
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Enable Docker Buildx (for caching)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          tags: |
+            ${{ steps.ecr_login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
 
   Continuous-Deployment:
     needs: Continuous-Integration
@@ -54,31 +56,45 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions
+
+      - name: Set region explicitly
+        run: echo "AWS_DEFAULT_REGION=${{ env.AWS_REGION }}" >> $GITHUB_ENV
 
       - name: Login to Amazon ECR
-        id: login-ecr
+        id: ecr_login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Pull latest image
+      - name: Define Image URI
         run: |
-          IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          echo "Pulling $IMAGE_URI"
-          docker pull $IMAGE_URI
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGION=${{ env.AWS_REGION }}
 
-      - name: Stop and remove old container
+          IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Stop and Remove Old Container
         run: |
-          docker stop $CONTAINER_NAME || true
-          docker rm $CONTAINER_NAME || true
+          docker rm -f $CONTAINER_NAME || true
 
-      - name: Run new container
+      # 🔥 Pull only if image not already present locally
+      - name: Pull Image
         run: |
-          IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          if ! docker image inspect $IMAGE_URI > /dev/null 2>&1; then
+            echo "Image not found locally — pulling..."
+            docker pull $IMAGE_URI
+          else
+            echo "Image already exists locally — skipping pull."
+          fi
 
+      - name: Run New Container
+        run: |
           docker run -d \
             --name $CONTAINER_NAME \
             --restart unless-stopped \
             -p 8000:8000 \
             $IMAGE_URI
 
-      - name: Clean unused Docker images (safe cleanup)
+      - name: Cleanup Unused Images
         run: docker image prune -f
