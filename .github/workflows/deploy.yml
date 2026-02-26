@@ -27,7 +27,7 @@ jobs:
 
       - name: Build Image
         run: |
-          docker build -t plant_diseases_detector:${{ github.sha }} .
+          docker build --no-cache -t plant_diseases_detector:${{ github.sha }} .
 
       - name: Tag Image
         run: |
