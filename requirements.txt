@@ -2,3 +2,4 @@ fastapi
 numpy==2.0.2
 uvicorn[standard]
 tensorflow==2.19.0
+pillow
