@@ -32,7 +32,8 @@ jobs:
       - name: Tag Image
         run: |
           docker tag plant_diseases_detector:${{ github.sha }} \
-          547619294594.dkr.ecr.eu-north-1.amazonaws.com/plant_diseases_detector:${{ github.sha }}
+          547619294594.dkr.ecr.eu-north-1.amazonaws.com/plant_diseases_detector:${{ github.sha }} 
+          
 
       - name: Push Image
         run: |
